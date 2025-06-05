@@ -15,6 +15,7 @@ from sklearn.neighbors import NearestNeighbors
 
 
 recommender = None
+embedding_model = None
 
 
 def download_pdf(url, output_path):
@@ -43,6 +44,12 @@ def pdf_to_text(path, start_page=1, end_page=None):
 
     doc.close()
     return text_list
+
+
+def pdf_to_string(path, start_page=1, end_page=None):
+    """Return the whole PDF as a single string."""
+    texts = pdf_to_text(path, start_page=start_page, end_page=end_page)
+    return " ".join(texts)
 
 
 def text_to_chunks(texts, word_length=150, start_page=1):
@@ -159,6 +166,26 @@ def load_openai_key() -> str:
     return key
 
 
+def rank_resume_similarity(job_desc_path, resume_paths):
+    """Return a list of tuples (resume_path, similarity) sorted by similarity."""
+    global embedding_model
+    if embedding_model is None:
+        embedding_model = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+
+    job_text = pdf_to_string(job_desc_path)
+    job_emb = embedding_model([job_text])
+
+    results = []
+    for r in resume_paths:
+        resume_text = pdf_to_string(r)
+        res_emb = embedding_model([resume_text])
+        score = float(np.inner(job_emb, res_emb)[0][0])
+        results.append((r, score))
+
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results
+
+
 @serving
 def ask_url(url: str, question: str):
     download_pdf(url, 'corpus.pdf')
@@ -177,3 +204,22 @@ async def ask_file(file: UploadFile, question: str) -> str:
     load_recommender(str(tmp_path))
     openAI_key = load_openai_key()
     return generate_answer(question, openAI_key)
+
+
+@serving
+async def rank_resumes(job_description: UploadFile, resumes: list[UploadFile]):
+    """Rank multiple resumes against a job description."""
+    jd_suffix = Path(job_description.filename).suffix
+    with NamedTemporaryFile(delete=False, suffix=jd_suffix) as tmp:
+        shutil.copyfileobj(job_description.file, tmp)
+        jd_path = Path(tmp.name)
+
+    resume_paths = []
+    for r in resumes:
+        suffix = Path(r.filename).suffix
+        with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            shutil.copyfileobj(r.file, tmp)
+            resume_paths.append(Path(tmp.name))
+
+    results = rank_resume_similarity(str(jd_path), [str(p) for p in resume_paths])
+    return [{"resume": Path(p).name, "score": s} for p, s in results]
