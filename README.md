@@ -107,3 +107,18 @@ If you use PDF-GPT in your research or wish to refer to the examples in this rep
   journal = {GitHub Repository},
   howpublished = {\url{https://github.com/bhaskatripathi/pdfGPT}}
 }
+
+```
+
+## Resume Ranking Endpoint
+
+Recruiters can submit one job description PDF and a list of resume PDFs to the `/rank_resumes` API. It returns the resumes sorted by similarity score:
+
+```json
+[
+  {"resume": "candidate1.pdf", "score": 0.89},
+  {"resume": "candidate2.pdf", "score": 0.75}
+]
+```
+
+Higher scores indicate a closer match to the job description.
